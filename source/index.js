@@ -239,6 +239,117 @@ Object.defineProperties(createChalk.prototype, {...styles, level: levelDescripto
 const chalk = createChalk();
 export const chalkStderr = createChalk({level: stderrColor ? stderrColor.level : 0});
 
+// Custom themes. A theme is a callable object: invoking it runs its `default`
+// style, and named styles hang off the theme as own properties (e.g.
+// `aurora.title('hi')`). Themes live in a single Map so `chalk`, `chalkStderr`,
+// and `new Chalk(...)` instances all see the same registry.
+
+const themes = new Map();
+
+const assertValidThemeName = name => {
+	if (typeof name !== 'string' || name.length === 0) {
+		throw new TypeError('The theme name should be a non-empty string');
+	}
+
+	// Restrict to valid JS identifiers so `theme.<name>` always reads as a
+	// plain property access and never collides with inherited methods.
+	if (!/^[a-zA-Z_$][\w$]*$/.test(name)) {
+		throw new Error(
+			`Invalid theme name: ${JSON.stringify(name)}. Theme names must be valid JavaScript identifiers (letters, digits, underscore, dollar sign; no leading digit).`,
+		);
+	}
+};
+
+const assertValidStyles = (name, styles) => {
+	if (styles === null || typeof styles !== 'object' || Array.isArray(styles)) {
+		throw new TypeError(`Theme "${name}" styles must be a plain object`);
+	}
+
+	for (const [key, value] of Object.entries(styles)) {
+		if (typeof value !== 'function') {
+			throw new TypeError(
+				`Theme "${name}.${key}" must be a function (chalk style builder), got ${typeof value}`,
+			);
+		}
+	}
+};
+
+const createTheme = (name, styles) => {
+	assertValidThemeName(name);
+	assertValidStyles(name, styles);
+
+	if (themes.has(name)) {
+		throw new Error(`A theme named "${name}" is already registered`);
+	}
+
+	// The theme is both a function (invoking it runs the `default` style) and
+	// an object whose keys are the named styles. This keeps the old
+	// `chalk.theme.aurora('text')` API working while exposing the new
+	// `chalk.theme.aurora.title('text')` form.
+	const theme = (...arguments_) => {
+		if (typeof styles.default === 'function') {
+			return styles.default(...arguments_);
+		}
+
+		return arguments_.join(' ');
+	};
+
+	for (const [key, value] of Object.entries(styles)) {
+		theme[key] = value;
+	}
+
+	themes.set(name, theme);
+	return theme;
+};
+
+// Register the built-in `aurora` theme. The `default` style preserves the
+// original neon aurora/cyber look for backward compatibility.
+createTheme('aurora', {
+	default: text => chalk
+		.rgb(255, 0, 255) // Neon magenta foreground.
+		.bgRgb(26, 0, 51) // Deep aurora-night background.
+		.bold
+		.italic
+		.underlineRgb(0, 255, 255) // Neon cyan underline color.
+		.underlineCurly(text),
+	title: chalk.hex('#7DF9FF').bold,
+	subtitle: chalk.hex('#B8F7FF'),
+	success: chalk.hex('#7CFFB2'),
+	warning: chalk.hex('#FFE66D'),
+	error: chalk.hex('#FF6B81').bold,
+});
+
+const themeDescriptor = {
+	enumerable: true,
+	get() {
+		// `Object.create(null)` so a theme literally named `__proto__` cannot
+		// pollute the prototype chain of the returned namespace.
+		const result = Object.create(null);
+		for (const [name, theme] of themes) {
+			Object.defineProperty(result, name, {
+				value: theme,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
+		}
+
+		return result;
+	},
+};
+
+// Expose the theme namespace and `createTheme` on every chalk entry point so
+// the default export, stderr, and `new Chalk(...)` instances share one registry.
+for (const target of [chalk, chalkStderr, createChalk.prototype]) {
+	Object.defineProperty(target, 'theme', themeDescriptor);
+	Object.defineProperty(target, 'createTheme', {
+		value: createTheme,
+		enumerable: false,
+		writable: false,
+		configurable: false,
+	});
+}
+
 export {
 	modifierNames,
 	foregroundColorNames,

@@ -249,6 +249,52 @@ export interface ChalkInstance {
 	*/
 	readonly visible: this;
 
+	/**
+	Namespace of registered themes. Each entry is a {@link Theme} built from
+	`createTheme` (or one of the built-in themes).
+
+	@example
+	```
+	import chalk from 'chalk';
+
+	const aurora = chalk.createTheme('aurora', {
+		title: chalk.hex('#7DF9FF').bold,
+		success: chalk.hex('#7CFFB2'),
+	});
+
+	console.log(chalk.theme.aurora.title('Hello'));
+	console.log(chalk.theme.aurora.success('Success!'));
+	```
+	*/
+	readonly theme: Record<string, Theme>;
+
+	/**
+	Create and register a named theme. The theme is stored under `chalk.theme.<name>`
+	and is also returned so it can be assigned to a local variable.
+
+	@param name - Theme name. Must be a non-empty string and a valid JavaScript
+	identifier (`/^[a-zA-Z_$][\w$]*$/`).
+	@param styles - Object mapping style names to chalk style builders. A
+	`default` style is invoked when the theme itself is called as a function.
+
+	@throws If `name` is not a valid identifier, if `styles` is not a plain
+	object, if any style value is not a function, or if `name` is already
+	registered.
+
+	@example
+	```
+	import chalk from 'chalk';
+
+	export const aurora = chalk.createTheme('aurora', {
+		title: chalk.hex('#7DF9FF').bold,
+		success: chalk.hex('#7CFFB2'),
+		warning: chalk.hex('#FFE66D'),
+		error: chalk.hex('#FF6B81').bold,
+	});
+	```
+	*/
+	createTheme(name: string, styles: Record<string, ThemeStyle>): Theme;
+
 	readonly black: this;
 	readonly red: this;
 	readonly green: this;
@@ -332,6 +378,21 @@ export interface ChalkInstance {
 	readonly underlineMagentaBright: this;
 	readonly underlineCyanBright: this;
 	readonly underlineWhiteBright: this;
+}
+
+/**
+A single theme style: a chalk builder function that applies one named look.
+*/
+export type ThemeStyle = (...text: unknown[]) => string;
+
+/**
+A theme registered via `chalk.createTheme(name, styles)`. A theme is both a
+callable (which runs its `default` style) and an object exposing each named
+style as an own property.
+*/
+export interface Theme {
+	(...text: unknown[]): string;
+	[key: string]: ThemeStyle;
 }
 
 /**
